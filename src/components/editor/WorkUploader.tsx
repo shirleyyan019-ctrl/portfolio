@@ -221,28 +221,36 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
         </div>
       </div>
 
-      {/* Back image for flip effect */}
+      {/* Back image for flip effect - always visible when flip selected */}
       {cardEffect === "flip" && (
         <div
-          className="border border-dashed rounded-lg p-3 text-center cursor-pointer transition-colors hover:border-opacity-60"
-          style={{ borderColor: theme.colors.accent + "60" }}
-          onClick={() => !uploading && backFileRef.current?.click()}
+          className="rounded-lg p-3 text-center"
+          style={{ backgroundColor: `${theme.colors.accent}15`, border: `1px solid ${theme.colors.accent}40` }}
         >
-          {backPreview ? (
-            <div>
-              <p className="text-xs mb-1" style={{ color: theme.colors.accent }}>
-                {language === "zh" ? "背面图片（点击更换）" : "Back image (click to change)"}
-              </p>
-              <img src={backPreview} alt="Back" className="max-h-24 mx-auto rounded object-contain" />
-            </div>
-          ) : (
-            <div className="space-y-1">
-              <ImagePlus size={20} className="mx-auto" style={{ color: theme.colors.accent }} />
-              <p className="text-xs" style={{ color: theme.colors.muted }}>
-                {language === "zh" ? "上传背面图片（翻转后显示）" : "Upload back image (shown after flip)"}
-              </p>
-            </div>
-          )}
+          <p className="text-xs font-medium mb-2" style={{ color: theme.colors.accent }}>
+            {language === "zh" ? "📷 背面图片（点击上传）" : "📷 Back Image (click to upload)"}
+          </p>
+          <div
+            className="border-2 border-dashed rounded-lg p-3 cursor-pointer transition-colors"
+            style={{ borderColor: backPreview ? theme.colors.accent : `${theme.colors.border}` }}
+            onClick={() => !uploading && backFileRef.current?.click()}
+          >
+            {backPreview ? (
+              <div>
+                <img src={backPreview} alt="Back" className="max-h-20 mx-auto rounded" />
+                <p className="text-[10px] mt-1" style={{ color: theme.colors.muted }}>
+                  {language === "zh" ? "点击更换" : "Click to change"}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1 py-2">
+                <ImagePlus size={24} className="mx-auto" style={{ color: theme.colors.accent }} />
+                <p className="text-xs" style={{ color: theme.colors.muted }}>
+                  {language === "zh" ? "上传翻转后的背面图" : "Upload back image for flip"}
+                </p>
+              </div>
+            )}
+          </div>
           <input ref={backFileRef} type="file" className="hidden" accept="image/*" onChange={handleBackFileChange} />
         </div>
       )}

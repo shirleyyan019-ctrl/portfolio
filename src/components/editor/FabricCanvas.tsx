@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePortfolioStore } from "@/lib/store";
 import { Section, Work, ThemeConfig } from "@/lib/types";
-import * as fabric from "fabric";
 
 interface FabricCanvasProps {
   sections: Section[];
@@ -20,249 +19,160 @@ export default function FabricCanvas({
   onUpdateWork,
   theme,
 }: FabricCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fabricRef = useRef<fabric.Canvas | null>(null);
-  const workMapRef = useRef<Map<string, fabric.Group>>(new Map());
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
 
-  // Initialize canvas
+  const handleMouseDown = (e: React.MouseEvent, workId: string) => {
+    e.preventDefault();
+    setDragging(workId);
+    onSelectWork(workId);
+    const rect = (e.target as HTMLElement).closest("[data-card]")!.getBoundingClientRect();
+    setOffset({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+  };
+
   useEffect(() => {
-    if (!canvasRef.current) return;
+    if (!dragging) return;
 
-    const canvas = new fabric.Canvas(canvasRef.current, {
-      width: window.innerWidth - 320,
-      height: window.innerHeight - 64 - 56,
-      backgroundColor: "transparent",
-      selection: true,
-      preserveObjectStacking: true,
-    });
+    const handleMouseMove = (e: MouseEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX - rect.left - offset.x + container.scrollLeft;
+      const y = e.clientY - rect.top - offset.y + container.scrollTop;
 
-    fabricRef.current = canvas;
-
-    canvas.on("selection:created", (e) => {
-      const obj = e.selected?.[0];
-      if (obj) {
-        const id = (obj as any).workId as string | undefined;
-        if (id) onSelectWork(id);
-      }
-    });
-
-    canvas.on("selection:updated", (e) => {
-      const obj = e.selected?.[0];
-      if (obj) {
-        const id = (obj as any).workId as string | undefined;
-        if (id) onSelectWork(id);
-      }
-    });
-
-    canvas.on("selection:cleared", () => {
-      onSelectWork(null);
-    });
-
-    // Object modified - only update position after drag
-    canvas.on("object:modified", (e) => {
-      const obj = e.target;
-      if (!obj) return;
-
-      const id = (obj as any).workId as string | undefined;
-      const sectionId = (obj as any).sectionId as string | undefined;
-      if (!id || !sectionId) return;
-
-      // Only update position, keep the stored size
-      onUpdateWork(sectionId, id, {
-        position: { x: obj.left || 0, y: obj.top || 0 },
-        rotation: obj.angle || 0,
-      });
-
-      // Reset any accidental scale
-      if (obj.scaleX !== 1 || obj.scaleY !== 1) {
-        const workMap = workMapRef.current.get(id);
-        if (workMap) {
-          const originalWidth = (workMap as any)._originalWidth || 240;
-          const originalHeight = (workMap as any)._originalHeight || 200;
-          obj.set({ scaleX: 1, scaleY: 1, width: originalWidth, height: originalHeight });
+      // Find the work and update position
+      for (const section of sections) {
+        const work = section.works.find(w => w.id === dragging);
+        if (work) {
+          // Update position in store (debounced by React)
+          onUpdateWork(section.id, work.id, {
+            position: { x: Math.max(0, x), y: Math.max(0, y) },
+          });
+          break;
         }
       }
-      obj.setCoords();
-      canvas.renderAll();
-    });
-
-    const handleResize = () => {
-      canvas.setDimensions({
-        width: window.innerWidth - 320,
-        height: window.innerHeight - 64 - 56,
-      });
-      canvas.renderAll();
     };
 
-    window.addEventListener("resize", handleResize);
+    const handleMouseUp = () => {
+      setDragging(null);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
 
     return () => {
-      window.removeEventListener("resize", handleResize);
-      canvas.dispose();
-      fabricRef.current = null;
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [onSelectWork, onUpdateWork]);
-
-  // Render works
-  useEffect(() => {
-    const canvas = fabricRef.current;
-    if (!canvas) return;
-
-    canvas.clear();
-    workMapRef.current.clear();
-
-    let yOffset = 40;
-
-    sections.forEach((section) => {
-      if (!section.visible) return;
-
-      // Section title
-      const title = new fabric.Text(section.title.zh || "Section", {
-        left: 40,
-        top: yOffset,
-        fontSize: 24,
-        fontWeight: "bold",
-        fill: theme.colors.foreground,
-        selectable: false,
-        evented: false,
-      });
-      canvas.add(title);
-      yOffset += 50;
-
-      if (section.works.length === 0) {
-        yOffset += 20;
-        return;
-      }
-
-      let xOffset = 40;
-      const cardGap = 20;
-
-      section.works.forEach((work) => {
-        const cardWidth = work.size.width || 240;
-        const cardHeight = work.size.height || 200;
-        const radius = theme.spacing.cardRadius;
-
-        // Background rect
-        const bg = new fabric.Rect({
-          width: cardWidth,
-          height: cardHeight,
-          fill: theme.colors.card,
-          rx: radius,
-          ry: radius,
-          stroke: theme.colors.border,
-          strokeWidth: 1,
-          shadow: new fabric.Shadow({
-            color: "rgba(0,0,0,0.15)",
-            blur: 10,
-            offsetX: 0,
-            offsetY: 4,
-          }),
-        });
-
-        const objects: fabric.Object[] = [bg];
-
-        // Load image
-        if (work.url) {
-          fabric.FabricImage.fromURL(work.url, { crossOrigin: "anonymous" }).then((img) => {
-            const padding = 8;
-            const titleHeight = 36;
-            const imgMaxWidth = cardWidth - padding * 2;
-            const imgMaxHeight = cardHeight - titleHeight - padding * 2;
-
-            const scaleX = imgMaxWidth / (img.width || 1);
-            const scaleY = imgMaxHeight / (img.height || 1);
-            const scale = Math.min(scaleX, scaleY);
-
-            const scaledWidth = (img.width || 200) * scale;
-            const scaledHeight = (img.height || 200) * scale;
-
-            img.set({
-              left: (cardWidth - scaledWidth) / 2,
-              top: padding,
-              scaleX: scale,
-              scaleY: scale,
-              selectable: false,
-              evented: false,
-            });
-
-            // Add to group
-            (group as any).add(img);
-            canvas.renderAll();
-          });
-        } else {
-          const text = new fabric.Text(work.title.zh || "Empty", {
-            left: cardWidth / 2,
-            top: cardHeight / 2,
-            fontSize: 14,
-            fill: theme.colors.muted,
-            originX: "center",
-            originY: "center",
-            selectable: false,
-            evented: false,
-          });
-          objects.push(text);
-        }
-
-        // Title text
-        const titleText = new fabric.Textbox(work.title.zh || "Untitled", {
-          text: work.title.zh || "Untitled",
-          width: cardWidth - 16,
-          left: 8,
-          top: cardHeight - 36,
-          fontSize: 12,
-          fontWeight: "bold",
-          fill: theme.colors.cardText,
-          fontFamily: "Inter, sans-serif",
-          selectable: false,
-          evented: false,
-        });
-        objects.push(titleText);
-
-        // Create group
-        const group = new fabric.Group(objects, {
-          left: work.position.x || xOffset,
-          top: work.position.y || yOffset,
-          angle: work.rotation || 0,
-        });
-
-        (group as any).workId = work.id;
-        (group as any).sectionId = section.id;
-        (group as any)._originalWidth = cardWidth;
-        (group as any)._originalHeight = cardHeight;
-
-        canvas.add(group);
-        workMapRef.current.set(work.id, group);
-
-        xOffset += cardWidth + cardGap;
-      });
-
-      const maxHeight = Math.max(...section.works.map(w => w.size.height || 200));
-      yOffset += maxHeight + 50;
-    });
-
-    canvas.renderAll();
-  }, [sections, theme]);
-
-  // Highlight selected work
-  useEffect(() => {
-    const canvas = fabricRef.current;
-    if (!canvas) return;
-
-    canvas.discardActiveObject();
-
-    if (selectedWorkId) {
-      const group = workMapRef.current.get(selectedWorkId);
-      if (group) {
-        canvas.setActiveObject(group);
-      }
-    }
-
-    canvas.renderAll();
-  }, [selectedWorkId]);
+  }, [dragging, offset, sections, onUpdateWork]);
 
   return (
-    <div className="w-full h-full overflow-auto" style={{ backgroundColor: theme.colors.background }}>
-      <canvas ref={canvasRef} />
+    <div
+      ref={containerRef}
+      className="flex-1 overflow-auto p-8"
+      style={{ backgroundColor: theme.colors.background }}
+    >
+      {sections.filter(s => s.visible).map(section => (
+        <div key={section.id} className="mb-12">
+          {/* Section title */}
+          <h2
+            className="text-xl font-bold mb-6"
+            style={{ color: theme.colors.foreground }}
+          >
+            {section.title.zh}
+          </h2>
+
+          {/* Works grid */}
+          {section.works.length > 0 ? (
+            <div className="flex flex-wrap gap-5">
+              {section.works.map(work => {
+                const isSelected = selectedWorkId === work.id;
+                return (
+                  <div
+                    key={work.id}
+                    data-card
+                    className="relative cursor-move select-none"
+                    style={{
+                      width: work.size.width,
+                      height: work.size.height,
+                      borderRadius: theme.spacing.cardRadius,
+                      backgroundColor: theme.colors.card,
+                      border: `2px solid ${isSelected ? theme.colors.accent : theme.colors.border}`,
+                      boxShadow: isSelected
+                        ? `0 0 0 3px ${theme.colors.accent}40`
+                        : "0 4px 12px rgba(0,0,0,0.15)",
+                      transition: dragging === work.id ? "none" : "box-shadow 0.2s",
+                    }}
+                    onMouseDown={(e) => handleMouseDown(e, work.id)}
+                    onClick={() => onSelectWork(work.id)}
+                  >
+                    {/* Image */}
+                    {work.url ? (
+                      <img
+                        src={work.url}
+                        alt={work.title.zh}
+                        className="w-full object-cover"
+                        style={{
+                          height: work.size.height - 36,
+                          borderRadius: `${theme.spacing.cardRadius}px ${theme.spacing.cardRadius}px 0 0`,
+                        }}
+                        draggable={false}
+                      />
+                    ) : (
+                      <div
+                        className="w-full flex items-center justify-center"
+                        style={{ height: work.size.height - 36 }}
+                      >
+                        <span className="text-xs" style={{ color: theme.colors.muted }}>
+                          No image
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Title bar */}
+                    <div
+                      className="absolute bottom-0 left-0 right-0 px-3 flex items-center"
+                      style={{
+                        height: 36,
+                        borderRadius: `0 0 ${theme.spacing.cardRadius}px ${theme.spacing.cardRadius}px`,
+                        background: `linear-gradient(to right, ${theme.colors.card}, ${theme.colors.card})`,
+                      }}
+                    >
+                      <span
+                        className="text-xs font-medium truncate"
+                        style={{ color: theme.colors.cardText }}
+                      >
+                        {work.title.zh || "Untitled"}
+                      </span>
+                      {work.cardEffect === "flip" && (
+                        <span
+                          className="ml-auto text-[10px] px-1.5 py-0.5 rounded"
+                          style={{ backgroundColor: `${theme.colors.accent}30`, color: theme.colors.accent }}
+                        >
+                          FLIP
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div
+              className="flex items-center justify-center py-16 rounded-xl border-2 border-dashed"
+              style={{ borderColor: theme.colors.border, color: theme.colors.muted }}
+            >
+              <p className="text-sm">
+                {sections.length > 0 ? "暂无作品，点击底部按钮添加" : "No works yet"}
+              </p>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
