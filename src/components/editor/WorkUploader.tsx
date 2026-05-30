@@ -64,14 +64,19 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
         const data = await res.json();
 
         if (!res.ok) {
-          setUploadError(data.error || "Upload failed");
+          const errMsg = data.hint || data.details || data.error || "Upload failed";
+          setUploadError(errMsg);
           setUploading(false);
           return;
         }
 
         workUrl = data.url;
-      } catch {
-        setUploadError(language === "zh" ? "上传失败，请重试" : "Upload failed, please retry");
+      } catch (err) {
+        setUploadError(
+          err instanceof Error
+            ? err.message
+            : language === "zh" ? "上传失败，请重试" : "Upload failed, please retry"
+        );
         setUploading(false);
         return;
       }
