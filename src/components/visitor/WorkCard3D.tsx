@@ -111,12 +111,6 @@ export default function WorkCard3D({ work, index }: WorkCard3DProps) {
                   autoPlay={isHovered}
                   poster={work.thumbnailUrl || undefined}
                 />
-              ) : work.type === "animation" ? (
-                <img
-                  src={work.url}
-                  alt={title}
-                  className="w-full h-full object-cover"
-                />
               ) : (
                 <img
                   src={work.url}
@@ -126,39 +120,37 @@ export default function WorkCard3D({ work, index }: WorkCard3DProps) {
                 />
               )}
 
-              {/* Overlay */}
+              {/* Overlay with click hint for flip */}
+              {work.cardEffect === "flip" && work.backUrl && (
+                <div
+                  className="absolute bottom-2 right-2 px-2 py-1 rounded text-xs opacity-60"
+                  style={{
+                    backgroundColor: "rgba(0,0,0,0.6)",
+                    color: "#fff",
+                  }}
+                >
+                  {language === "zh" ? "点击翻转" : "Click to flip"}
+                </div>
+              )}
+
+              {/* Hover overlay */}
               <div
                 className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-300 flex items-end p-4"
                 style={{
-                  background:
-                    "linear-gradient(to top, rgba(0,0,0,0.8), transparent)",
+                  background: "linear-gradient(to top, rgba(0,0,0,0.8), transparent)",
                 }}
               >
-                <div>
-                  <h3
-                    className="font-semibold text-sm"
-                    style={{ color: portfolio.theme.colors.cardText }}
-                  >
-                    {title}
-                  </h3>
-                </div>
+                <h3 className="font-semibold text-sm" style={{ color: portfolio.theme.colors.cardText }}>
+                  {title}
+                </h3>
               </div>
-            </div>
-          )}
-
-          {/* Empty placeholder */}
-          {!work.url && (
-            <div className="w-full h-full flex items-center justify-center">
-              <p style={{ color: portfolio.theme.colors.muted }}>
-                {title}
-              </p>
             </div>
           )}
         </motion.div>
 
-        {/* Back */}
+        {/* Back - Shows back image if available, otherwise description */}
         <motion.div
-          className="absolute inset-0 backface-hidden overflow-hidden p-5 flex flex-col justify-between"
+          className="absolute inset-0 backface-hidden overflow-hidden"
           style={{
             borderRadius: radius,
             backgroundColor: portfolio.theme.colors.card,
@@ -167,48 +159,40 @@ export default function WorkCard3D({ work, index }: WorkCard3DProps) {
           animate={{ rotateY: isFlipped ? 0 : -180 }}
           transition={{ duration: 0.6, ease: "easeInOut" }}
         >
-          <div>
-            <h3
-              className="text-lg font-bold mb-2"
-              style={{ color: portfolio.theme.colors.cardText }}
-            >
-              {title}
-            </h3>
-            <p
-              className="text-sm leading-relaxed"
-              style={{ color: portfolio.theme.colors.muted }}
-            >
-              {description}
-            </p>
-          </div>
-          <div className="flex gap-2 mt-4">
-            <span
-              className="text-xs px-2 py-1 rounded"
-              style={{
-                backgroundColor: portfolio.theme.colors.accent,
-                color: "#fff",
-              }}
-            >
-              {work.type === "image"
-                ? "图片"
-                : work.type === "video"
-                ? "视频"
-                : "动效"}
-            </span>
-            <span
-              className="text-xs px-2 py-1 rounded"
-              style={{
-                backgroundColor: `${portfolio.theme.colors.accent}20`,
-                color: portfolio.theme.colors.accent,
-              }}
-            >
-              {work.cardEffect === "flip"
-                ? "翻转"
-                : work.cardEffect === "float"
-                ? "悬浮"
-                : "倾斜"}
-            </span>
-          </div>
+          {work.backUrl ? (
+            // Show back image
+            <img
+              src={work.backUrl}
+              alt={title + " (back)"}
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            // Fallback: show description
+            <div className="w-full h-full p-5 flex flex-col justify-between">
+              <div>
+                <h3 className="text-lg font-bold mb-2" style={{ color: portfolio.theme.colors.cardText }}>
+                  {title}
+                </h3>
+                <p className="text-sm leading-relaxed" style={{ color: portfolio.theme.colors.muted }}>
+                  {description}
+                </p>
+              </div>
+              <div className="flex gap-2 mt-4">
+                <span
+                  className="text-xs px-2 py-1 rounded"
+                  style={{ backgroundColor: portfolio.theme.colors.accent, color: "#fff" }}
+                >
+                  {work.type === "image" ? "图片" : work.type === "video" ? "视频" : "动效"}
+                </span>
+                <span
+                  className="text-xs px-2 py-1 rounded"
+                  style={{ backgroundColor: `${portfolio.theme.colors.accent}20`, color: portfolio.theme.colors.accent }}
+                >
+                  翻转
+                </span>
+              </div>
+            </div>
+          )}
         </motion.div>
       </motion.div>
     </motion.div>

@@ -17,6 +17,7 @@ export interface Work {
   description: Record<string, string>;
   type: "image" | "video" | "animation";
   url: string;
+  backUrl?: string;  // 翻转效果的背面图片
   thumbnailUrl: string;
   position: { x: number; y: number };
   size: { width: number; height: number };

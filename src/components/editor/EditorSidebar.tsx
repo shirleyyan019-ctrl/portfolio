@@ -408,17 +408,15 @@ export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
           </motion.div>
         )}
 
-        {/* Properties Panel (when work is selected) */}
-        {editorSidebar !== "properties" && selectedWorkId && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="mt-4 pt-4"
-            style={{ borderTop: `1px solid ${theme.colors.border}` }}
+        {/* Properties Panel - always visible at bottom when work is selected */}
+        {selectedWorkId && (
+          <div
+            className="mt-auto pt-3 border-t"
+            style={{ borderColor: theme.colors.border }}
           >
-            <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+            <h3 className="font-semibold text-sm mb-2 flex items-center gap-2">
               <Settings size={14} />
-              {language === "zh" ? "选中作品属性" : "Selected Work Properties"}
+              {language === "zh" ? "作品属性" : "Work Props"}
             </h3>
             {(() => {
               let work = null;
@@ -524,7 +522,16 @@ export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
                 </div>
               );
             })()}
-          </motion.div>
+          </div>
+        )}
+
+        {/* Hint when no work selected */}
+        {!selectedWorkId && (
+          <div className="mt-auto pt-3 border-t" style={{ borderColor: theme.colors.border }}>
+            <p className="text-xs text-center" style={{ color: theme.colors.muted }}>
+              {language === "zh" ? "点击画布中的卡片编辑属性" : "Click a card to edit"}
+            </p>
+          </div>
         )}
       </div>
     </div>
