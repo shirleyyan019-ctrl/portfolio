@@ -44,8 +44,13 @@ export async function POST(request: NextRequest) {
     const ext = file.name.split(".").pop() || "jpg";
     const filename = `works/${timestamp}-${randomStr}.${ext}`;
 
+    // Convert File to Buffer (required for server-side upload)
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
     // Upload to Vercel Blob
-    const blob = await put(filename, file, {
+    const blob = await put(filename, buffer, {
+      contentType: file.type,
       access: "public",
     });
 
@@ -65,9 +70,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
