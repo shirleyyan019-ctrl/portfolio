@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { usePortfolioStore } from "@/lib/store";
-import { Upload, X, ImagePlus, Film, Sparkles } from "lucide-react";
+import { Upload, X, ImagePlus, Film, Sparkles, Loader2 } from "lucide-react";
 import { Work } from "@/lib/types";
 
 interface WorkUploaderProps {
@@ -11,12 +11,15 @@ interface WorkUploaderProps {
 }
 
 export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) {
-  const { addWork, portfolio, language } = usePortfolioStore();
+  const { addWork, portfolio, language, syncToCloud } = usePortfolioStore();
   const [title, setTitle] = useState({ zh: "", en: "" });
   const [description, setDescription] = useState({ zh: "", en: "" });
   const [type, setType] = useState<Work["type"]>("image");
   const [preview, setPreview] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [cardEffect, setCardEffect] = useState<Work["cardEffect"]>("tilt");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { theme } = portfolio;
 
@@ -24,24 +27,62 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setUploadError(null);
+
+    // Preview locally
     const reader = new FileReader();
     reader.onloadend = () => {
       setPreview(reader.result as string);
     };
     reader.readAsDataURL(file);
 
+    setSelectedFile(file);
+
     if (file.type.startsWith("video/")) setType("video");
     else if (file.name.endsWith(".gif")) setType("animation");
     else setType("image");
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (!selectedFile && !preview) return;
+    setUploading(true);
+    setUploadError(null);
+
+    let workUrl = preview || "";
+
+    // Upload file to cloud if a file is selected
+    if (selectedFile) {
+      try {
+        const formData = new FormData();
+        formData.append("file", selectedFile);
+
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          setUploadError(data.error || "Upload failed");
+          setUploading(false);
+          return;
+        }
+
+        workUrl = data.url;
+      } catch {
+        setUploadError(language === "zh" ? "上传失败，请重试" : "Upload failed, please retry");
+        setUploading(false);
+        return;
+      }
+    }
+
     const work: Work = {
       id: `work-${Date.now()}`,
       title,
       description,
       type,
-      url: preview || "",
+      url: workUrl,
       thumbnailUrl: "",
       position: { x: 60, y: 0 },
       size: { width: 240, height: 200 },
@@ -49,7 +90,10 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
       zIndex: 0,
       cardEffect,
     };
+
     addWork(sectionId, work);
+    await syncToCloud();
+    setUploading(false);
     onClose?.();
   };
 
@@ -58,6 +102,11 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
     color: theme.colors.foreground,
     border: `1px solid ${theme.colors.border}`,
   };
+
+  // Max size label
+  const sizeLabel = selectedFile
+    ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB`
+    : null;
 
   return (
     <div
@@ -72,7 +121,11 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
           {language === "zh" ? "上传作品" : "Upload Work"}
         </h4>
         {onClose && (
-          <button onClick={onClose} style={{ color: theme.colors.muted }}>
+          <button
+            onClick={onClose}
+            disabled={uploading}
+            style={{ color: theme.colors.muted }}
+          >
             <X size={16} />
           </button>
         )}
@@ -82,7 +135,7 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
       <div
         className="border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-colors hover:border-opacity-60"
         style={{ borderColor: theme.colors.border }}
-        onClick={() => fileRef.current?.click()}
+        onClick={() => !uploading && fileRef.current?.click()}
       >
         {preview ? (
           <div className="relative">
@@ -99,6 +152,11 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
                 className="max-h-40 mx-auto rounded-lg"
               />
             )}
+            {sizeLabel && (
+              <p className="text-xs mt-2" style={{ color: theme.colors.muted }}>
+                {sizeLabel}
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-2">
@@ -108,8 +166,8 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
             </p>
             <p className="text-xs" style={{ color: theme.colors.muted }}>
               {language === "zh"
-                ? "支持 JPG、PNG、GIF、MP4"
-                : "Supports JPG, PNG, GIF, MP4"}
+                ? "支持 JPG、PNG、GIF、MP4，最大 20MB"
+                : "JPG, PNG, GIF, MP4 supported, max 20MB"}
             </p>
           </div>
         )}
@@ -121,6 +179,11 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
           onChange={handleFileChange}
         />
       </div>
+
+      {/* Upload error */}
+      {uploadError && (
+        <p className="text-xs text-red-400 text-center">{uploadError}</p>
+      )}
 
       {/* Type selection */}
       <div className="flex gap-2">
@@ -205,11 +268,18 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
       {/* Submit */}
       <button
         onClick={handleSubmit}
-        disabled={!preview || !title.zh}
-        className="w-full py-2.5 text-sm font-medium rounded-lg transition-all hover:opacity-80 disabled:opacity-40"
+        disabled={(!selectedFile && !preview) || uploading}
+        className="w-full py-2.5 text-sm font-medium rounded-lg transition-all hover:opacity-80 disabled:opacity-40 flex items-center justify-center gap-2"
         style={{ backgroundColor: theme.colors.accent, color: "#fff" }}
       >
-        {language === "zh" ? "添加作品" : "Add Work"}
+        {uploading ? (
+          <>
+            <Loader2 size={16} className="animate-spin" />
+            {language === "zh" ? "正在上传..." : "Uploading..."}
+          </>
+        ) : (
+          language === "zh" ? "添加作品" : "Add Work"
+        )}
       </button>
     </div>
   );
