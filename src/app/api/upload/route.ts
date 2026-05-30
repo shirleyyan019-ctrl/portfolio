@@ -3,17 +3,6 @@ import { put } from "@vercel/blob";
 
 export async function POST(request: NextRequest) {
   try {
-    // Check if Blob token is configured
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      return NextResponse.json(
-        {
-          error: "Blob storage not configured",
-          hint: "Please create a Blob store in Vercel Dashboard → Storage → Create Database → Blob, then connect it to this project.",
-        },
-        { status: 500 }
-      );
-    }
-
     const formData = await request.formData();
     const file = formData.get("file") as File;
 
@@ -58,7 +47,6 @@ export async function POST(request: NextRequest) {
     // Upload to Vercel Blob
     const blob = await put(filename, file, {
       access: "public",
-      contentType: file.type,
     });
 
     return NextResponse.json({
@@ -77,3 +65,9 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+};
