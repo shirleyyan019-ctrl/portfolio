@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef } from "react";
 import { usePortfolioStore } from "@/lib/store";
 import { Section, Work, ThemeConfig } from "@/lib/types";
 import * as fabric from "fabric";
@@ -13,13 +13,6 @@ interface FabricCanvasProps {
   theme: ThemeConfig;
 }
 
-interface WorkObject {
-  workId: string;
-  sectionId: string;
-  fabricObject: fabric.Object;
-  image?: fabric.Image;
-}
-
 export default function FabricCanvas({
   sections,
   selectedWorkId,
@@ -29,8 +22,8 @@ export default function FabricCanvas({
 }: FabricCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricRef = useRef<fabric.Canvas | null>(null);
-  const workObjectsRef = useRef<Map<string, WorkObject>>(new Map());
-  const [imagesLoaded, setImagesLoaded] = useState(false);
+  const workMapRef = useRef<Map<string, { group: fabric.Group; img: fabric.Image; bg: fabric.Rect }>>(new Map());
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Initialize canvas
   useEffect(() => {
@@ -46,24 +39,19 @@ export default function FabricCanvas({
 
     fabricRef.current = canvas;
 
-    // Selection events
     canvas.on("selection:created", (e) => {
       const obj = e.selected?.[0];
       if (obj) {
-        const workObj = (obj as any).data as WorkObject | undefined;
-        if (workObj?.workId) {
-          onSelectWork(workObj.workId);
-        }
+        const id = (obj as any).workId as string | undefined;
+        if (id) onSelectWork(id);
       }
     });
 
     canvas.on("selection:updated", (e) => {
       const obj = e.selected?.[0];
       if (obj) {
-        const workObj = (obj as any).data as WorkObject | undefined;
-        if (workObj?.workId) {
-          onSelectWork(workObj.workId);
-        }
+        const id = (obj as any).workId as string | undefined;
+        if (id) onSelectWork(id);
       }
     });
 
@@ -71,30 +59,88 @@ export default function FabricCanvas({
       onSelectWork(null);
     });
 
-    // Object modified (resize/move)
-    canvas.on("object:modified", (e) => {
+    // Before scaling - save original aspect ratio
+    canvas.on("before:transform", (e) => {
+      const obj = e.transform?.target;
+      if (obj && (obj as any).workId) {
+        (obj as any)._originalWidth = obj.width;
+        (obj as any)._originalHeight = obj.height;
+      }
+    });
+
+    // During scaling - maintain aspect ratio
+    canvas.on("object:scaling", (e) => {
       const obj = e.target;
-      if (!obj) return;
+      if (!obj || !(obj as any).workId) return;
 
-      const workObj = (obj as any).data as WorkObject | undefined;
-      if (!workObj?.workId) return;
+      const workMap = workMapRef.current.get((obj as any).workId as string);
+      if (!workMap) return;
 
-      onUpdateWork(workObj.sectionId, workObj.workId, {
-        position: { x: obj.left || 0, y: obj.top || 0 },
-        size: {
-          width: (obj.width || 200) * (obj.scaleX || 1),
-          height: (obj.height || 200) * (obj.scaleY || 1),
-        },
-        rotation: obj.angle || 0,
+      // Calculate new size maintaining aspect ratio
+      const scaleX = obj.scaleX || 1;
+      const scaleY = obj.scaleY || 1;
+
+      // Use the larger scale to maintain aspect ratio
+      const uniformScale = Math.max(scaleX, scaleY);
+
+      // Update group size
+      const newWidth = ((obj as any)._originalWidth || 200) * uniformScale;
+      const newHeight = ((obj as any)._originalHeight || 200) * uniformScale;
+
+      obj.set({
+        scaleX: 1,
+        scaleY: 1,
+        width: newWidth,
+        height: newHeight,
       });
 
-      // Reset scale after applying to size
-      obj.set({ scaleX: 1, scaleY: 1, width: obj.width, height: obj.height });
+      // Update image size proportionally
+      const img = workMap.img;
+      if (img) {
+        const imgScale = uniformScale / (obj as any)._originalScale || 1;
+        img.set({
+          scaleX: (img as any)._originalScaleX * imgScale,
+          scaleY: (img as any)._originalScaleY * imgScale,
+        });
+        img.setCoords();
+      }
+
       obj.setCoords();
       canvas.renderAll();
     });
 
-    // Resize handler
+    // Object modified - save new size
+    canvas.on("object:modified", (e) => {
+      const obj = e.target;
+      if (!obj) return;
+
+      const id = (obj as any).workId as string | undefined;
+      const sectionId = (obj as any).sectionId as string | undefined;
+      if (!id || !sectionId) return;
+
+      // Calculate final scale
+      const workMap = workMapRef.current.get(id);
+      let finalWidth = obj.width || 200;
+      let finalHeight = obj.height || 200;
+
+      if (workMap?.img) {
+        const imgScaleX = workMap.img.scaleX / ((workMap.img as any)._originalScaleX || 1);
+        const imgScaleY = workMap.img.scaleY / ((workMap.img as any)._originalScaleY || 1);
+        finalWidth = (workMap.img as any)._originalWidth * workMap.img.scaleX;
+        finalHeight = (workMap.img as any)._originalHeight * workMap.img.scaleY;
+      }
+
+      onUpdateWork(sectionId, id, {
+        position: { x: obj.left || 0, y: obj.top || 0 },
+        size: { width: finalWidth, height: finalHeight },
+        rotation: obj.angle || 0,
+      });
+
+      obj.set({ scaleX: 1, scaleY: 1 });
+      obj.setCoords();
+      canvas.renderAll();
+    });
+
     const handleResize = () => {
       canvas.setDimensions({
         width: window.innerWidth - 320,
@@ -112,24 +158,20 @@ export default function FabricCanvas({
     };
   }, [onSelectWork, onUpdateWork]);
 
-  // Render works on canvas
+  // Render works
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) return;
 
-    // Clear existing objects
     canvas.clear();
-    workObjectsRef.current.clear();
-    setImagesLoaded(false);
+    workMapRef.current.clear();
 
     let yOffset = 40;
-
-    const loadPromises: Promise<void>[] = [];
 
     sections.forEach((section) => {
       if (!section.visible) return;
 
-      // Section title (non-selectable)
+      // Section title
       const title = new fabric.Text(section.title.zh || "Section", {
         left: 40,
         top: yOffset,
@@ -148,179 +190,127 @@ export default function FabricCanvas({
       }
 
       let xOffset = 40;
-      const maxRowHeight = 200;
+      const cardGap = 20;
 
       section.works.forEach((work) => {
-        const cardWidth = work.size.width || 200;
+        const cardWidth = work.size.width || 240;
         const cardHeight = work.size.height || 200;
+        const radius = theme.spacing.cardRadius;
 
-        const loadImagePromise = new Promise<void>((resolve) => {
-          if (work.url) {
-            fabric.FabricImage.fromURL(work.url, { crossOrigin: "anonymous" })
-              .then((img) => {
-                // Scale image to fit card size
-                const scale = Math.min(cardWidth / (img.width || 1), cardHeight / (img.height || 1));
-                const imgWidth = (img.width || 200) * scale;
-                const imgHeight = (img.height || 200) * scale;
-
-                img.set({
-                  left: 0,
-                  top: 0,
-                  scaleX: scale,
-                  scaleY: scale,
-                  selectable: false,
-                  evented: false,
-                });
-
-                // Card background with rounded corners
-                const bg = new fabric.Rect({
-                  width: cardWidth,
-                  height: cardHeight,
-                  fill: theme.colors.card,
-                  rx: theme.spacing.cardRadius,
-                  ry: theme.spacing.cardRadius,
-                  stroke: theme.colors.border,
-                  strokeWidth: 1,
-                  shadow: new fabric.Shadow({
-                    color: "rgba(0,0,0,0.2)",
-                    blur: 8,
-                    offsetX: 0,
-                    offsetY: 2,
-                  }),
-                });
-
-                // Title text
-                const titleText = new fabric.Textbox(work.title.zh || "Untitled", {
-                  text: work.title.zh || "Untitled",
-                  width: cardWidth - 16,
-                  left: 8,
-                  top: cardHeight - 36,
-                  fontSize: 12,
-                  fontWeight: "bold",
-                  fill: theme.colors.cardText,
-                  selectable: false,
-                  evented: false,
-                });
-
-                // Create group
-                const group = new fabric.Group([bg, img, titleText], {
-                  left: work.position.x || xOffset,
-                  top: work.position.y || yOffset,
-                  angle: work.rotation || 0,
-                  hasControls: true,
-                  hasBorders: true,
-                  cornerColor: theme.colors.accent,
-                  cornerStyle: "circle",
-                  cornerSize: 10,
-                  transparentCorners: false,
-                  borderColor: theme.colors.accent,
-                  borderScaleFactor: 2,
-                });
-
-                (group as any).data = { workId: work.id, sectionId: section.id };
-
-                canvas.add(group);
-                workObjectsRef.current.set(work.id, {
-                  workId: work.id,
-                  sectionId: section.id,
-                  fabricObject: group,
-                  image: img,
-                });
-
-                xOffset += cardWidth + 20;
-                resolve();
-              })
-              .catch(() => {
-                // Fallback: just create a placeholder
-                const bg = new fabric.Rect({
-                  width: cardWidth,
-                  height: cardHeight,
-                  fill: theme.colors.card,
-                  rx: theme.spacing.cardRadius,
-                  ry: theme.spacing.cardRadius,
-                  stroke: theme.colors.border,
-                  strokeWidth: 1,
-                });
-                const text = new fabric.Text(work.title.zh || "No preview", {
-                  left: cardWidth / 2,
-                  top: cardHeight / 2,
-                  fontSize: 12,
-                  fill: theme.colors.muted,
-                  originX: "center",
-                  originY: "center",
-                });
-                const group = new fabric.Group([bg, text], {
-                  left: work.position.x || xOffset,
-                  top: work.position.y || yOffset,
-                  angle: work.rotation || 0,
-                  hasControls: true,
-                  hasBorders: true,
-                  cornerColor: theme.colors.accent,
-                  cornerStyle: "circle",
-                  cornerSize: 10,
-                });
-                (group as any).data = { workId: work.id, sectionId: section.id };
-                canvas.add(group);
-                workObjectsRef.current.set(work.id, {
-                  workId: work.id,
-                  sectionId: section.id,
-                  fabricObject: group,
-                });
-                xOffset += cardWidth + 20;
-                resolve();
-              });
-          } else {
-            // No image, just placeholder
-            const bg = new fabric.Rect({
-              width: cardWidth,
-              height: cardHeight,
-              fill: theme.colors.card,
-              rx: theme.spacing.cardRadius,
-              ry: theme.spacing.cardRadius,
-              stroke: theme.colors.border,
-              strokeWidth: 1,
-              strokeDashArray: [5, 5],
-            });
-            const text = new fabric.Text(work.title.zh || "Empty", {
-              left: cardWidth / 2,
-              top: cardHeight / 2,
-              fontSize: 12,
-              fill: theme.colors.muted,
-              originX: "center",
-              originY: "center",
-            });
-            const group = new fabric.Group([bg, text], {
-              left: work.position.x || xOffset,
-              top: work.position.y || yOffset,
-              angle: work.rotation || 0,
-              hasControls: true,
-              hasBorders: true,
-              cornerColor: theme.colors.accent,
-              cornerStyle: "circle",
-              cornerSize: 10,
-            });
-            (group as any).data = { workId: work.id, sectionId: section.id };
-            canvas.add(group);
-            workObjectsRef.current.set(work.id, {
-              workId: work.id,
-              sectionId: section.id,
-              fabricObject: group,
-            });
-            xOffset += cardWidth + 20;
-            resolve();
-          }
+        // Background rect
+        const bg = new fabric.Rect({
+          width: cardWidth,
+          height: cardHeight,
+          fill: theme.colors.card,
+          rx: radius,
+          ry: radius,
+          stroke: theme.colors.border,
+          strokeWidth: 1,
+          shadow: new fabric.Shadow({
+            color: "rgba(0,0,0,0.15)",
+            blur: 10,
+            offsetX: 0,
+            offsetY: 4,
+          }),
         });
 
-        loadPromises.push(loadImagePromise);
+        // Create group with bg only initially
+        const group = new fabric.Group([bg], {
+          left: work.position.x || xOffset,
+          top: work.position.y || yOffset,
+          angle: work.rotation || 0,
+        });
+
+        (group as any).workId = work.id;
+        (group as any).sectionId = section.id;
+        (group as any)._originalWidth = cardWidth;
+        (group as any)._originalHeight = cardHeight;
+        (group as any)._originalScale = 1;
+
+        canvas.add(group);
+
+        // Load and add image
+        if (work.url) {
+          fabric.FabricImage.fromURL(work.url, { crossOrigin: "anonymous" }).then((img) => {
+            // Calculate image bounds within card (leave room for title)
+            const padding = 8;
+            const titleHeight = 40;
+            const imgMaxWidth = cardWidth - padding * 2;
+            const imgMaxHeight = cardHeight - titleHeight - padding * 2;
+
+            // Calculate scale to fit
+            const scaleX = imgMaxWidth / (img.width || 1);
+            const scaleY = imgMaxHeight / (img.height || 1);
+            const scale = Math.min(scaleX, scaleY);
+
+            const scaledWidth = (img.width || 200) * scale;
+            const scaledHeight = (img.height || 200) * scale;
+
+            // Center the image horizontally
+            const imgLeft = (cardWidth - scaledWidth) / 2;
+            const imgTop = padding;
+
+            img.set({
+              left: imgLeft,
+              top: imgTop,
+              scaleX: scale,
+              scaleY: scale,
+              selectable: false,
+              evented: false,
+            });
+
+            // Store original values for scaling calculations
+            (img as any)._originalWidth = scaledWidth;
+            (img as any)._originalHeight = scaledHeight;
+            (img as any)._originalScaleX = scale;
+            (img as any)._originalScaleY = scale;
+
+            // Add image to group
+            (group as any).add(img);
+            (group as any).canvas?.renderAll();
+
+            // Store reference
+            workMapRef.current.set(work.id, { group, img, bg });
+
+            canvas.renderAll();
+          });
+        } else {
+          // No image - show placeholder text
+          const text = new fabric.Text(work.title.zh || "Empty", {
+            left: cardWidth / 2,
+            top: cardHeight / 2,
+            fontSize: 14,
+            fill: theme.colors.muted,
+            originX: "center",
+            originY: "center",
+            selectable: false,
+            evented: false,
+          });
+          (group as any).add(text);
+        }
+
+        // Title text
+        const titlePadding = 8;
+        const titleText = new fabric.Textbox(work.title.zh || "Untitled", {
+          text: work.title.zh || "Untitled",
+          width: cardWidth - titlePadding * 2,
+          left: titlePadding,
+          top: cardHeight - 36,
+          fontSize: 12,
+          fontWeight: "bold",
+          fill: theme.colors.cardText,
+          fontFamily: "Inter, sans-serif",
+          selectable: false,
+          evented: false,
+        });
+        (group as any).add(titleText);
+
+        xOffset += cardWidth + cardGap;
       });
 
-      yOffset += maxRowHeight + 40;
-    });
-
-    // Update imagesLoaded after all images attempt to load
-    Promise.all(loadPromises).then(() => {
-      canvas.renderAll();
-      setImagesLoaded(true);
+      // Find max height in this row
+      const maxHeight = Math.max(...section.works.map(w => w.size.height || 200));
+      yOffset += maxHeight + 50;
     });
 
     canvas.renderAll();
@@ -331,20 +321,20 @@ export default function FabricCanvas({
     const canvas = fabricRef.current;
     if (!canvas) return;
 
+    canvas.discardActiveObject();
+
     if (selectedWorkId) {
-      const workObj = workObjectsRef.current.get(selectedWorkId);
-      if (workObj?.fabricObject) {
-        canvas.setActiveObject(workObj.fabricObject);
-        canvas.renderAll();
+      const entry = workMapRef.current.get(selectedWorkId);
+      if (entry?.group) {
+        canvas.setActiveObject(entry.group);
       }
-    } else {
-      canvas.discardActiveObject();
-      canvas.renderAll();
     }
+
+    canvas.renderAll();
   }, [selectedWorkId]);
 
   return (
-    <div className="w-full h-full overflow-auto bg-gray-900/50">
+    <div ref={containerRef} className="w-full h-full overflow-auto" style={{ backgroundColor: theme.colors.background }}>
       <canvas ref={canvasRef} />
     </div>
   );
