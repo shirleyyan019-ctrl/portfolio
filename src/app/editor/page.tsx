@@ -7,7 +7,7 @@ import EditorSidebar from "@/components/editor/EditorSidebar";
 import EditorCanvasWrapper from "@/components/editor/EditorCanvasWrapper";
 import ShareModal from "@/components/visitor/ShareModal";
 import WorkUploader from "@/components/editor/WorkUploader";
-import { Plus } from "lucide-react";
+import { Plus, Loader2, Cloud, CloudOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 export default function EditorPage() {
@@ -17,10 +17,14 @@ export default function EditorPage() {
     language,
     setShareModalOpen,
     setEditorSidebar,
+    syncToCloud,
+    cloudSyncStatus,
   } = usePortfolioStore();
   const router = useRouter();
   const [showUploader, setShowUploader] = useState<string | null>(null);
   const { theme } = portfolio;
+
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -29,20 +33,15 @@ export default function EditorPage() {
   }, [isAuthenticated, router]);
 
   const handleSave = async () => {
-    try {
-      const response = await fetch("/api/portfolio", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(portfolio),
-      });
-      if (response.ok) {
-        alert(language === "zh" ? "保存成功！" : "Saved successfully!");
-      }
-    } catch {
-      // localStorage fallback
-      localStorage.setItem("portfolio-data", JSON.stringify(portfolio));
-      alert(language === "zh" ? "已保存到本地存储" : "Saved to local storage");
+    setSaveMsg(language === "zh" ? "正在同步到云端..." : "Syncing to cloud...");
+    await syncToCloud();
+    const { cloudSyncStatus: status } = usePortfolioStore.getState();
+    if (status === "synced" || status === "idle") {
+      setSaveMsg(language === "zh" ? "已保存到云端" : "Saved to cloud");
+    } else {
+      setSaveMsg(language === "zh" ? "已保存到本地" : "Saved locally");
     }
+    setTimeout(() => setSaveMsg(null), 2000);
   };
 
   if (!isAuthenticated) {
@@ -55,6 +54,17 @@ export default function EditorPage() {
       style={{ backgroundColor: theme.colors.background }}
     >
       <EditorToolbar onSave={handleSave} />
+
+      {/* Save confirmation toast */}
+      {saveMsg && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg text-sm font-medium shadow-lg flex items-center gap-2"
+          style={{ backgroundColor: theme.colors.accent, color: "#fff" }}>
+          {cloudSyncStatus === "syncing" && <Loader2 size={14} className="animate-spin" />}
+          {(cloudSyncStatus === "synced" || cloudSyncStatus === "idle") && <Cloud size={14} />}
+          {cloudSyncStatus === "error" && <CloudOff size={14} />}
+          {saveMsg}
+        </div>
+      )}
 
       <div className="flex-1 flex overflow-hidden">
         <EditorSidebar />

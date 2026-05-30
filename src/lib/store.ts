@@ -1,6 +1,7 @@
 import { PortfolioData, Work, Section, ThemeConfig, EditorTool } from "./types";
 import { getTheme } from "./themes";
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 const defaultPortfolio: PortfolioData = {
   sections: [
@@ -45,6 +46,7 @@ interface PortfolioStore {
   // Data
   portfolio: PortfolioData;
   language: "zh" | "en";
+  cloudSyncStatus: "idle" | "syncing" | "synced" | "error";
 
   // Editor state
   isEditing: boolean;
@@ -56,6 +58,9 @@ interface PortfolioStore {
   isShareModalOpen: boolean;
   isPreviewMode: boolean;
 
+  // Hydration
+  _hasHydrated: boolean;
+
   // History
   history: PortfolioData[];
   historyIndex: number;
@@ -65,6 +70,11 @@ interface PortfolioStore {
   login: (password: string) => boolean;
   logout: () => void;
   setEditing: (editing: boolean) => void;
+  setHasHydrated: (state: boolean) => void;
+
+  // Cloud sync
+  syncToCloud: () => Promise<void>;
+  loadFromCloud: () => Promise<void>;
 
   // Portfolio actions
   updatePortfolio: (data: Partial<PortfolioData>) => void;
@@ -104,170 +114,221 @@ interface PortfolioStore {
   loadPortfolio: (data: PortfolioData) => void;
 }
 
-export const usePortfolioStore = create<PortfolioStore>((set, get) => ({
-  portfolio: defaultPortfolio,
-  language: "zh",
-  isEditing: false,
-  isAuthenticated: false,
-  selectedWorkId: null,
-  selectedSectionId: null,
-  activeTool: "select",
-  editorSidebar: "sections",
-  isShareModalOpen: false,
-  isPreviewMode: false,
-  history: [defaultPortfolio],
-  historyIndex: 0,
+export const usePortfolioStore = create<PortfolioStore>()(
+  persist(
+    (set, get) => ({
+      portfolio: defaultPortfolio,
+      language: "zh",
+      cloudSyncStatus: "idle",
+      isEditing: false,
+      isAuthenticated: false,
+      selectedWorkId: null,
+      selectedSectionId: null,
+      activeTool: "select",
+      editorSidebar: "sections",
+      isShareModalOpen: false,
+      isPreviewMode: false,
+      _hasHydrated: false,
+      history: [defaultPortfolio],
+      historyIndex: 0,
 
-  setLanguage: (lang) => set({ language: lang }),
+      setHasHydrated: (state) => set({ _hasHydrated: state }),
 
-  login: (password) => {
-    if (password === "portfolio2024") {
-      set({ isAuthenticated: true, isEditing: true });
-      return true;
-    }
-    return false;
-  },
+      setLanguage: (lang) => set({ language: lang }),
 
-  logout: () => set({ isAuthenticated: false, isEditing: false }),
+      login: (password) => {
+        if (password === "portfolio2024") {
+          set({ isAuthenticated: true, isEditing: true });
+          return true;
+        }
+        return false;
+      },
 
-  setEditing: (editing) => set({ isEditing: editing }),
+      logout: () => set({ isAuthenticated: false, isEditing: false }),
 
-  updatePortfolio: (data) => {
-    const state = get();
-    const newPortfolio = { ...state.portfolio, ...data };
-    set({ portfolio: newPortfolio });
-    state.pushHistory();
-  },
+      setEditing: (editing) => set({ isEditing: editing }),
 
-  setTheme: (themeId) => {
-    const theme = getTheme(themeId);
-    const state = get();
-    set({ portfolio: { ...state.portfolio, theme } });
-    state.pushHistory();
-  },
+      syncToCloud: async () => {
+        const { portfolio } = get();
+        set({ cloudSyncStatus: "syncing" });
+        try {
+          await fetch("/api/portfolio", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(portfolio),
+          });
+          set({ cloudSyncStatus: "synced" });
+          setTimeout(() => set({ cloudSyncStatus: "idle" }), 2000);
+        } catch {
+          set({ cloudSyncStatus: "error" });
+        }
+      },
 
-  updateThemeColors: (colors) => {
-    const state = get();
-    const newTheme = {
-      ...state.portfolio.theme,
-      colors: { ...state.portfolio.theme.colors, ...colors },
-    };
-    set({ portfolio: { ...state.portfolio, theme: newTheme } });
-  },
-
-  addSection: (title) => {
-    const state = get();
-    const newSection: Section = {
-      id: `section-${Date.now()}`,
-      title,
-      visible: true,
-      works: [],
-    };
-    const newPortfolio = {
-      ...state.portfolio,
-      sections: [...state.portfolio.sections, newSection],
-    };
-    set({ portfolio: newPortfolio });
-    state.pushHistory();
-  },
-
-  updateSection: (id, data) => {
-    const state = get();
-    const newSections = state.portfolio.sections.map((s) =>
-      s.id === id ? { ...s, ...data } : s
-    );
-    set({ portfolio: { ...state.portfolio, sections: newSections } });
-  },
-
-  deleteSection: (id) => {
-    const state = get();
-    const newSections = state.portfolio.sections.filter((s) => s.id !== id);
-    set({ portfolio: { ...state.portfolio, sections: newSections } });
-    state.pushHistory();
-  },
-
-  reorderSections: (sections) => {
-    const state = get();
-    set({ portfolio: { ...state.portfolio, sections } });
-  },
-
-  addWork: (sectionId, work) => {
-    const state = get();
-    const newSections = state.portfolio.sections.map((s) =>
-      s.id === sectionId ? { ...s, works: [...s.works, work] } : s
-    );
-    set({ portfolio: { ...state.portfolio, sections: newSections } });
-    state.pushHistory();
-  },
-
-  updateWork: (sectionId, workId, data) => {
-    const state = get();
-    const newSections = state.portfolio.sections.map((s) =>
-      s.id === sectionId
-        ? {
-            ...s,
-            works: s.works.map((w) =>
-              w.id === workId ? { ...w, ...data } : w
-            ),
+      loadFromCloud: async () => {
+        try {
+          const res = await fetch("/api/portfolio");
+          const json = await res.json();
+          if (json.source === "cloud" && json.data) {
+            get().loadPortfolio(json.data);
           }
-        : s
-    );
-    set({ portfolio: { ...state.portfolio, sections: newSections } });
-  },
+        } catch {
+          // Fallback to localStorage will handle it
+        }
+      },
 
-  deleteWork: (sectionId, workId) => {
-    const state = get();
-    const newSections = state.portfolio.sections.map((s) =>
-      s.id === sectionId
-        ? { ...s, works: s.works.filter((w) => w.id !== workId) }
-        : s
-    );
-    set({ portfolio: { ...state.portfolio, sections: newSections } });
-    state.pushHistory();
-  },
+      updatePortfolio: (data) => {
+        const state = get();
+        const newPortfolio = { ...state.portfolio, ...data };
+        set({ portfolio: newPortfolio });
+        state.pushHistory();
+      },
 
-  updatePersonalInfo: (data) => {
-    const state = get();
-    const newPersonal = { ...state.portfolio.personalInfo, ...data };
-    set({ portfolio: { ...state.portfolio, personalInfo: newPersonal } });
-  },
+      setTheme: (themeId) => {
+        const theme = getTheme(themeId);
+        const state = get();
+        set({ portfolio: { ...state.portfolio, theme } });
+        state.pushHistory();
+      },
 
-  selectWork: (workId) => set({ selectedWorkId: workId }),
-  selectSection: (sectionId) => set({ selectedSectionId: sectionId }),
-  setActiveTool: (tool) => set({ activeTool: tool }),
-  setEditorSidebar: (panel) => set({ editorSidebar: panel }),
-  setShareModalOpen: (open) => set({ isShareModalOpen: open }),
-  setPreviewMode: (preview) => set({ isPreviewMode: preview }),
+      updateThemeColors: (colors) => {
+        const state = get();
+        const newTheme = {
+          ...state.portfolio.theme,
+          colors: { ...state.portfolio.theme.colors, ...colors },
+        };
+        set({ portfolio: { ...state.portfolio, theme: newTheme } });
+      },
 
-  pushHistory: () => {
-    const state = get();
-    const newHistory = state.history.slice(0, state.historyIndex + 1);
-    newHistory.push(state.portfolio);
-    if (newHistory.length > 50) newHistory.shift();
-    set({ history: newHistory, historyIndex: newHistory.length - 1 });
-  },
+      addSection: (title) => {
+        const state = get();
+        const newSection: Section = {
+          id: `section-${Date.now()}`,
+          title,
+          visible: true,
+          works: [],
+        };
+        const newPortfolio = {
+          ...state.portfolio,
+          sections: [...state.portfolio.sections, newSection],
+        };
+        set({ portfolio: newPortfolio });
+        state.pushHistory();
+      },
 
-  undo: () => {
-    const state = get();
-    if (state.historyIndex > 0) {
-      const newIndex = state.historyIndex - 1;
-      set({
-        portfolio: state.history[newIndex],
-        historyIndex: newIndex,
-      });
+      updateSection: (id, data) => {
+        const state = get();
+        const newSections = state.portfolio.sections.map((s) =>
+          s.id === id ? { ...s, ...data } : s
+        );
+        set({ portfolio: { ...state.portfolio, sections: newSections } });
+      },
+
+      deleteSection: (id) => {
+        const state = get();
+        const newSections = state.portfolio.sections.filter((s) => s.id !== id);
+        set({ portfolio: { ...state.portfolio, sections: newSections } });
+        state.pushHistory();
+      },
+
+      reorderSections: (sections) => {
+        const state = get();
+        set({ portfolio: { ...state.portfolio, sections } });
+      },
+
+      addWork: (sectionId, work) => {
+        const state = get();
+        const newSections = state.portfolio.sections.map((s) =>
+          s.id === sectionId ? { ...s, works: [...s.works, work] } : s
+        );
+        set({ portfolio: { ...state.portfolio, sections: newSections } });
+        state.pushHistory();
+      },
+
+      updateWork: (sectionId, workId, data) => {
+        const state = get();
+        const newSections = state.portfolio.sections.map((s) =>
+          s.id === sectionId
+            ? {
+                ...s,
+                works: s.works.map((w) =>
+                  w.id === workId ? { ...w, ...data } : w
+                ),
+              }
+            : s
+        );
+        set({ portfolio: { ...state.portfolio, sections: newSections } });
+      },
+
+      deleteWork: (sectionId, workId) => {
+        const state = get();
+        const newSections = state.portfolio.sections.map((s) =>
+          s.id === sectionId
+            ? { ...s, works: s.works.filter((w) => w.id !== workId) }
+            : s
+        );
+        set({ portfolio: { ...state.portfolio, sections: newSections } });
+        state.pushHistory();
+      },
+
+      updatePersonalInfo: (data) => {
+        const state = get();
+        const newPersonal = { ...state.portfolio.personalInfo, ...data };
+        set({ portfolio: { ...state.portfolio, personalInfo: newPersonal } });
+      },
+
+      selectWork: (workId) => set({ selectedWorkId: workId }),
+      selectSection: (sectionId) => set({ selectedSectionId: sectionId }),
+      setActiveTool: (tool) => set({ activeTool: tool }),
+      setEditorSidebar: (panel) => set({ editorSidebar: panel }),
+      setShareModalOpen: (open) => set({ isShareModalOpen: open }),
+      setPreviewMode: (preview) => set({ isPreviewMode: preview }),
+
+      pushHistory: () => {
+        const state = get();
+        const newHistory = state.history.slice(0, state.historyIndex + 1);
+        newHistory.push(state.portfolio);
+        if (newHistory.length > 50) newHistory.shift();
+        set({ history: newHistory, historyIndex: newHistory.length - 1 });
+      },
+
+      undo: () => {
+        const state = get();
+        if (state.historyIndex > 0) {
+          const newIndex = state.historyIndex - 1;
+          set({
+            portfolio: state.history[newIndex],
+            historyIndex: newIndex,
+          });
+        }
+      },
+
+      redo: () => {
+        const state = get();
+        if (state.historyIndex < state.history.length - 1) {
+          const newIndex = state.historyIndex + 1;
+          set({
+            portfolio: state.history[newIndex],
+            historyIndex: newIndex,
+          });
+        }
+      },
+
+      loadPortfolio: (data) =>
+        set({ portfolio: data, history: [data], historyIndex: 0 }),
+    }),
+    {
+      name: "portfolio-storage",
+      partialize: (state) => ({
+        portfolio: state.portfolio,
+        language: state.language,
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          state.setHasHydrated(true);
+          // Try to load from cloud after localStorage rehydration
+          state.loadFromCloud();
+        }
+      },
     }
-  },
-
-  redo: () => {
-    const state = get();
-    if (state.historyIndex < state.history.length - 1) {
-      const newIndex = state.historyIndex + 1;
-      set({
-        portfolio: state.history[newIndex],
-        historyIndex: newIndex,
-      });
-    }
-  },
-
-  loadPortfolio: (data) => set({ portfolio: data, history: [data], historyIndex: 0 }),
-}));
+  )
+);

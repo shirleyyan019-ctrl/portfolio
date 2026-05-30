@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { usePortfolioStore } from "@/lib/store";
 import SectionBlock from "./SectionBlock";
@@ -9,12 +10,35 @@ import { Share, Globe, Pencil } from "lucide-react";
 import Link from "next/link";
 
 export default function VisitorPage() {
-  const { portfolio, language, setLanguage, setShareModalOpen } =
+  const { portfolio, language, setLanguage, setShareModalOpen, _hasHydrated } =
     usePortfolioStore();
   const { sections, personalInfo, theme } = portfolio;
 
   const name = personalInfo.name[language] || personalInfo.name.zh;
   const tagline = personalInfo.title[language] || personalInfo.title.zh;
+
+  // Show loading state until store is hydrated from localStorage
+  if (!_hasHydrated) {
+    return (
+      <div
+        className="min-h-screen flex items-center justify-center"
+        style={{ backgroundColor: theme.colors.background }}
+      >
+        <div className="flex flex-col items-center gap-4">
+          <div
+            className="w-10 h-10 border-4 rounded-full animate-spin"
+            style={{
+              borderColor: theme.colors.border,
+              borderTopColor: theme.colors.accent,
+            }}
+          />
+          <p style={{ color: theme.colors.muted }}>
+            {language === "zh" ? "加载中..." : "Loading..."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
