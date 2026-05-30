@@ -20,6 +20,8 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
   const [cardEffect, setCardEffect] = useState<Work["cardEffect"]>("tilt");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [cardSize, setCardSize] = useState({ width: 300, height: 250 });
   const fileRef = useRef<HTMLInputElement>(null);
   const { theme } = portfolio;
 
@@ -32,7 +34,28 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
     // Preview locally
     const reader = new FileReader();
     reader.onloadend = () => {
-      setPreview(reader.result as string);
+      const dataUrl = reader.result as string;
+      setPreview(dataUrl);
+
+      // Get image dimensions
+      if (file.type.startsWith("image/")) {
+        const img = new Image();
+        img.onload = () => {
+          // Calculate card size based on image aspect ratio
+          // Target: around 300px width, height proportional
+          const targetWidth = 300;
+          const aspectRatio = img.width / img.height;
+          const calculatedHeight = targetWidth / aspectRatio;
+
+          // Clamp height to reasonable range
+          const clampedHeight = Math.min(Math.max(calculatedHeight, 150), 400);
+          const clampedWidth = Math.min(Math.max(targetWidth, 150), 400);
+
+          setImageDimensions({ width: img.width, height: img.height });
+          setCardSize({ width: clampedWidth, height: clampedHeight });
+        };
+        img.src = dataUrl;
+      }
     };
     reader.readAsDataURL(file);
 
@@ -89,8 +112,8 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
       type,
       url: workUrl,
       thumbnailUrl: "",
-      position: { x: 60, y: 0 },
-      size: { width: 240, height: 200 },
+      position: { x: 40, y: 0 },
+      size: { width: cardSize.width, height: cardSize.height },
       rotation: 0,
       zIndex: 0,
       cardEffect,
@@ -108,7 +131,6 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
     border: `1px solid ${theme.colors.border}`,
   };
 
-  // Max size label
   const sizeLabel = selectedFile
     ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB`
     : null;
@@ -147,14 +169,14 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
             {type === "video" ? (
               <video
                 src={preview}
-                className="max-h-40 mx-auto rounded-lg"
+                className="max-h-48 mx-auto rounded-lg"
                 controls
               />
             ) : (
               <img
                 src={preview}
                 alt="Preview"
-                className="max-h-40 mx-auto rounded-lg"
+                className="max-h-48 mx-auto rounded-lg object-contain"
               />
             )}
             {sizeLabel && (
@@ -188,6 +210,58 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
       {/* Upload error */}
       {uploadError && (
         <p className="text-xs text-red-400 text-center">{uploadError}</p>
+      )}
+
+      {/* Image info */}
+      {imageDimensions && (
+        <p className="text-xs text-center" style={{ color: theme.colors.muted }}>
+          {language === "zh" ? "原图尺寸" : "Original size"}: {imageDimensions.width} × {imageDimensions.height}px
+        </p>
+      )}
+
+      {/* Card size adjustment */}
+      {type === "image" && (
+        <div>
+          <label className="text-xs mb-2 block" style={{ color: theme.colors.muted }}>
+            {language === "zh" ? "卡片尺寸" : "Card Size"}
+          </label>
+          <div className="flex gap-3 items-center">
+            <div className="flex-1">
+              <label className="text-xs" style={{ color: theme.colors.muted }}>
+                {language === "zh" ? "宽度" : "Width"}
+              </label>
+              <input
+                type="range"
+                min="100"
+                max="500"
+                value={cardSize.width}
+                onChange={(e) => setCardSize({ ...cardSize, width: parseInt(e.target.value) })}
+                className="w-full"
+                style={{ accentColor: theme.colors.accent }}
+              />
+              <span className="text-xs" style={{ color: theme.colors.muted }}>
+                {cardSize.width}px
+              </span>
+            </div>
+            <div className="flex-1">
+              <label className="text-xs" style={{ color: theme.colors.muted }}>
+                {language === "zh" ? "高度" : "Height"}
+              </label>
+              <input
+                type="range"
+                min="100"
+                max="500"
+                value={cardSize.height}
+                onChange={(e) => setCardSize({ ...cardSize, height: parseInt(e.target.value) })}
+                className="w-full"
+                style={{ accentColor: theme.colors.accent }}
+              />
+              <span className="text-xs" style={{ color: theme.colors.muted }}>
+                {cardSize.height}px
+              </span>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Type selection */}
@@ -273,7 +347,7 @@ export default function WorkUploader({ sectionId, onClose }: WorkUploaderProps) 
       {/* Submit */}
       <button
         onClick={handleSubmit}
-        disabled={(!selectedFile && !preview) || uploading}
+        disabled={(!selectedFile && !preview) || uploading || !title.zh}
         className="w-full py-2.5 text-sm font-medium rounded-lg transition-all hover:opacity-80 disabled:opacity-40 flex items-center justify-center gap-2"
         style={{ backgroundColor: theme.colors.accent, color: "#fff" }}
       >
