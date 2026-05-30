@@ -433,7 +433,64 @@ export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
               }
               if (!work) return null;
               return (
-                <div className="space-y-3">
+                <div className="space-y-4">
+                  {/* Size controls */}
+                  <div>
+                    <label className="text-xs mb-2 block" style={{ color: theme.colors.muted }}>
+                      {language === "zh" ? "尺寸调整" : "Size Adjustment"}
+                    </label>
+                    <div className="space-y-3">
+                      {/* Width */}
+                      <div>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span style={{ color: theme.colors.muted }}>
+                            {language === "zh" ? "宽度" : "Width"}
+                          </span>
+                          <span style={{ color: theme.colors.foreground }}>
+                            {work.size.width}px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="100"
+                          max="600"
+                          value={work.size.width}
+                          onChange={(e) =>
+                            updateWork(sectionId, work!.id, {
+                              size: { ...work!.size, width: parseInt(e.target.value) },
+                            })
+                          }
+                          className="w-full"
+                          style={{ accentColor: theme.colors.accent }}
+                        />
+                      </div>
+                      {/* Height */}
+                      <div>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span style={{ color: theme.colors.muted }}>
+                            {language === "zh" ? "高度" : "Height"}
+                          </span>
+                          <span style={{ color: theme.colors.foreground }}>
+                            {work.size.height}px
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="100"
+                          max="600"
+                          value={work.size.height}
+                          onChange={(e) =>
+                            updateWork(sectionId, work!.id, {
+                              size: { ...work!.size, height: parseInt(e.target.value) },
+                            })
+                          }
+                          className="w-full"
+                          style={{ accentColor: theme.colors.accent }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
                   <div>
                     <label className="text-xs mb-1 block" style={{ color: theme.colors.muted }}>
                       {language === "zh" ? "卡片效果" : "Card Effect"}
