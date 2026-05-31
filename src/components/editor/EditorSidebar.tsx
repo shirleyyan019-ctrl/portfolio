@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { usePortfolioStore } from "@/lib/store";
 import { themes } from "@/lib/themes";
 import {
@@ -13,12 +13,13 @@ import {
   EyeOff,
   GripVertical,
 } from "lucide-react";
-import { useState } from "react";
 import { cn } from "@/lib/cn";
 
 interface EditorSidebarProps {
   onWorkSelect?: (workId: string | null) => void;
 }
+
+type EditableSizeField = "width" | "height" | null;
 
 export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
   const {
@@ -39,17 +40,16 @@ export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
 
   const [newSectionTitle, setNewSectionTitle] = useState({ zh: "", en: "" });
   const [showAddSection, setShowAddSection] = useState(false);
+  const [editingSizeField, setEditingSizeField] = useState<EditableSizeField>(null);
+  const [sizeInputValue, setSizeInputValue] = useState("");
 
   const { sections, theme } = portfolio;
 
-  // Find selected work and its section
   const { selectedWork, selectedWorkSectionId } = useMemo(() => {
     if (!selectedWorkId) return { selectedWork: null, selectedWorkSectionId: null };
     for (const section of sections) {
-      const work = section.works.find(w => w.id === selectedWorkId);
-      if (work) {
-        return { selectedWork: work, selectedWorkSectionId: section.id };
-      }
+      const work = section.works.find((w) => w.id === selectedWorkId);
+      if (work) return { selectedWork: work, selectedWorkSectionId: section.id };
     }
     return { selectedWork: null, selectedWorkSectionId: null };
   }, [selectedWorkId, sections]);
@@ -60,6 +60,25 @@ export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
     { id: "personal" as const, icon: User, label: language === "zh" ? "个人信息" : "Personal" },
   ];
 
+  const commitSizeInput = () => {
+    if (!selectedWork || !selectedWorkSectionId || !editingSizeField) return;
+    const parsed = Number.parseInt(sizeInputValue, 10);
+    if (!Number.isNaN(parsed)) {
+      const clamped = Math.min(1200, Math.max(40, parsed));
+      updateWork(selectedWorkSectionId, selectedWork.id, {
+        size: { ...selectedWork.size, [editingSizeField]: clamped },
+      });
+    }
+    setEditingSizeField(null);
+    setSizeInputValue("");
+  };
+
+  const startEditingSize = (field: "width" | "height") => {
+    if (!selectedWork) return;
+    setEditingSizeField(field);
+    setSizeInputValue(String(Math.round(selectedWork.size[field])));
+  };
+
   return (
     <div
       className="w-80 h-full flex flex-col"
@@ -68,7 +87,6 @@ export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
         borderRight: `1px solid ${theme.colors.border}`,
       }}
     >
-      {/* Tabs */}
       <div className="flex border-b" style={{ borderColor: theme.colors.border }}>
         {tabs.map((tab) => (
           <button
@@ -89,9 +107,7 @@ export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
         ))}
       </div>
 
-      {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {/* Sections Panel */}
         {editorSidebar === "sections" && (
           <div className="p-4 space-y-4">
             <div className="flex items-center justify-between">
@@ -139,7 +155,11 @@ export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
                   >
                     {language === "zh" ? "添加" : "Add"}
                   </button>
-                  <button onClick={() => setShowAddSection(false)} className="px-4 py-2 text-sm rounded-lg" style={{ backgroundColor: theme.colors.background, color: theme.colors.muted }}>
+                  <button
+                    onClick={() => setShowAddSection(false)}
+                    className="px-4 py-2 text-sm rounded-lg"
+                    style={{ backgroundColor: theme.colors.background, color: theme.colors.muted }}
+                  >
                     {language === "zh" ? "取消" : "Cancel"}
                   </button>
                 </div>
@@ -165,10 +185,18 @@ export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
                       </span>
                     </div>
                     <div className="flex gap-1">
-                      <button onClick={(e) => { e.stopPropagation(); updateSection(section.id, { visible: !section.visible }); }} className="p-1" style={{ color: theme.colors.muted }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); updateSection(section.id, { visible: !section.visible }); }}
+                        className="p-1"
+                        style={{ color: theme.colors.muted }}
+                      >
                         {section.visible ? <Eye size={14} /> : <EyeOff size={14} />}
                       </button>
-                      <button onClick={(e) => { e.stopPropagation(); deleteSection(section.id); }} className="p-1" style={{ color: "#ef4444" }}>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteSection(section.id); }}
+                        className="p-1"
+                        style={{ color: "#ef4444" }}
+                      >
                         <Trash2 size={14} />
                       </button>
                     </div>
@@ -182,7 +210,6 @@ export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
           </div>
         )}
 
-        {/* Theme Panel */}
         {editorSidebar === "theme" && (
           <div className="p-4 space-y-4">
             <h3 className="font-semibold text-sm">
@@ -211,7 +238,6 @@ export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
           </div>
         )}
 
-        {/* Personal Info Panel */}
         {editorSidebar === "personal" && (
           <div className="p-4 space-y-4">
             <h3 className="font-semibold text-sm">
@@ -263,52 +289,62 @@ export default function EditorSidebar({ onWorkSelect }: EditorSidebarProps) {
         )}
       </div>
 
-      {/* Properties Panel - Fixed at bottom */}
-      <div
-        className="border-t"
-        style={{ borderColor: theme.colors.border }}
-      >
+      <div className="border-t" style={{ borderColor: theme.colors.border }}>
         {selectedWork && selectedWorkSectionId ? (
           <div className="p-4 space-y-3">
             <h3 className="font-semibold text-sm" style={{ color: theme.colors.foreground }}>
               {language === "zh" ? "作品属性" : "Work Properties"}
             </h3>
 
-            {/* Width */}
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span style={{ color: theme.colors.muted }}>{language === "zh" ? "宽度" : "Width"}</span>
-                <span style={{ color: theme.colors.foreground }}>{selectedWork.size.width}px</span>
-              </div>
-              <input
-                type="range"
-                min="100"
-                max="600"
-                value={selectedWork.size.width}
-                onChange={(e) => updateWork(selectedWorkSectionId, selectedWork.id, { size: { ...selectedWork.size, width: parseInt(e.target.value) } })}
-                className="w-full"
-                style={{ accentColor: theme.colors.accent }}
-              />
-            </div>
+            {(["width", "height"] as const).map((field) => {
+              const label = field === "width" ? (language === "zh" ? "宽度" : "Width") : (language === "zh" ? "高度" : "Height");
+              return (
+                <div key={field}>
+                  <div className="flex justify-between items-center text-xs mb-1">
+                    <span style={{ color: theme.colors.muted }}>{label}</span>
+                    {editingSizeField === field ? (
+                      <input
+                        autoFocus
+                        type="number"
+                        min="40"
+                        max="1200"
+                        value={sizeInputValue}
+                        onChange={(e) => setSizeInputValue(e.target.value)}
+                        onBlur={commitSizeInput}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitSizeInput();
+                          if (e.key === "Escape") {
+                            setEditingSizeField(null);
+                            setSizeInputValue("");
+                          }
+                        }}
+                        className="w-16 px-1.5 py-0.5 rounded outline-none text-right"
+                        style={{ backgroundColor: theme.colors.background, color: theme.colors.foreground, border: `1px solid ${theme.colors.accent}` }}
+                      />
+                    ) : (
+                      <button
+                        onDoubleClick={() => startEditingSize(field)}
+                        className="px-1.5 py-0.5 rounded cursor-text hover:opacity-80"
+                        title={language === "zh" ? "双击输入数值" : "Double click to type"}
+                        style={{ color: theme.colors.foreground, backgroundColor: theme.colors.background }}
+                      >
+                        {Math.round(selectedWork.size[field])}px
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="range"
+                    min="40"
+                    max="1200"
+                    value={selectedWork.size[field]}
+                    onChange={(e) => updateWork(selectedWorkSectionId, selectedWork.id, { size: { ...selectedWork.size, [field]: parseInt(e.target.value) } })}
+                    className="w-full"
+                    style={{ accentColor: theme.colors.accent }}
+                  />
+                </div>
+              );
+            })}
 
-            {/* Height */}
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span style={{ color: theme.colors.muted }}>{language === "zh" ? "高度" : "Height"}</span>
-                <span style={{ color: theme.colors.foreground }}>{selectedWork.size.height}px</span>
-              </div>
-              <input
-                type="range"
-                min="100"
-                max="600"
-                value={selectedWork.size.height}
-                onChange={(e) => updateWork(selectedWorkSectionId, selectedWork.id, { size: { ...selectedWork.size, height: parseInt(e.target.value) } })}
-                className="w-full"
-                style={{ accentColor: theme.colors.accent }}
-              />
-            </div>
-
-            {/* Effect */}
             <div>
               <label className="text-xs mb-1 block" style={{ color: theme.colors.muted }}>{language === "zh" ? "交互效果" : "Effect"}</label>
               <select

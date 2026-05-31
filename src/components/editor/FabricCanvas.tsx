@@ -9,6 +9,7 @@ interface FabricCanvasProps {
   selectedWorkId: string | null;
   onSelectWork: (workId: string | null) => void;
   onUpdateWork: (sectionId: string, workId: string, data: Partial<Work>) => void;
+  onEditWork?: (sectionId: string, work: Work) => void;
   theme: ThemeConfig;
 }
 
@@ -17,6 +18,7 @@ export default function FabricCanvas({
   selectedWorkId,
   onSelectWork,
   onUpdateWork,
+  onEditWork,
   theme,
 }: FabricCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -108,6 +110,10 @@ export default function FabricCanvas({
                       transition: dragging === work.id ? "none" : "box-shadow 0.2s",
                     }}
                     onMouseDown={(e) => handleMouseDown(e, work.id)}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      onEditWork?.(section.id, work);
+                    }}
                     onClick={() => onSelectWork(work.id)}
                   >
                     {/* Image */}

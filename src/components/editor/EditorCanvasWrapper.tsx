@@ -3,6 +3,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { usePortfolioStore } from "@/lib/store";
+import { Work } from "@/lib/types";
 
 const FabricCanvas = dynamic(() => import("./FabricCanvas"), {
   ssr: false,
@@ -15,10 +16,12 @@ const FabricCanvas = dynamic(() => import("./FabricCanvas"), {
 
 interface EditorCanvasWrapperProps {
   onWorkSelect?: (workId: string | null) => void;
+  onEditWork?: (sectionId: string, work: Work) => void;
 }
 
 export default function EditorCanvasWrapper({
   onWorkSelect,
+  onEditWork,
 }: EditorCanvasWrapperProps) {
   const { portfolio, selectedWorkId, selectWork, updateWork, editorSidebar } =
     usePortfolioStore();
@@ -45,6 +48,7 @@ export default function EditorCanvasWrapper({
         selectedWorkId={selectedWorkId}
         onSelectWork={handleWorkSelect}
         onUpdateWork={updateWork}
+        onEditWork={onEditWork}
         theme={portfolio.theme}
       />
     </div>

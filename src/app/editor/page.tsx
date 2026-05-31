@@ -7,6 +7,8 @@ import EditorSidebar from "@/components/editor/EditorSidebar";
 import EditorCanvasWrapper from "@/components/editor/EditorCanvasWrapper";
 import ShareModal from "@/components/visitor/ShareModal";
 import WorkUploader from "@/components/editor/WorkUploader";
+import WorkEditModal from "@/components/editor/WorkEditModal";
+import { Work } from "@/lib/types";
 import { Plus, Loader2, Cloud, CloudOff } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -22,6 +24,7 @@ export default function EditorPage() {
   } = usePortfolioStore();
   const router = useRouter();
   const [showUploader, setShowUploader] = useState<string | null>(null);
+  const [editingWork, setEditingWork] = useState<{ sectionId: string; work: Work } | null>(null);
   const { theme } = portfolio;
 
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -71,7 +74,9 @@ export default function EditorPage() {
 
         <div className="flex-1 flex flex-col">
           {/* Canvas area */}
-          <EditorCanvasWrapper />
+          <EditorCanvasWrapper
+            onEditWork={(sectionId, work) => setEditingWork({ sectionId, work })}
+          />
 
           {/* Bottom: quick actions */}
           <div
@@ -117,6 +122,15 @@ export default function EditorPage() {
             />
           </div>
         </div>
+      )}
+
+      {/* Work editor modal */}
+      {editingWork && (
+        <WorkEditModal
+          sectionId={editingWork.sectionId}
+          work={editingWork.work}
+          onClose={() => setEditingWork(null)}
+        />
       )}
 
       <ShareModal />
